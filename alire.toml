@@ -1,0 +1,11 @@
+name = "tost8"
+description = "Shiny new project"
+version = "0.1.0-dev"
+
+authors = ["Loukas Paschopoulos"]
+maintainers = ["Loukas Paschopoulos <loukaspas3@gmail.com>"]
+maintainers-logins = ["loukaspas"]
+
+executables = ["tost8"]
+[[depends-on]]
+sdlada = "^2.5.5"
