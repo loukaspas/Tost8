@@ -1,5 +1,5 @@
 name = "tost8"
-description = "Shiny new project"
+description = "A chip 8 emulator."
 version = "0.1.0-dev"
 
 authors = ["Loukas Paschopoulos"]
