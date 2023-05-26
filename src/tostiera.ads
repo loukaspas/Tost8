@@ -54,8 +54,7 @@ package Tostiera is
 
   procedure Clock_Cycle;
   procedure Fetch_Instruction;
-  procedure Decode_Instruction;
-  procedure Execute_Instruction;
+  procedure Decode_And_Execute_Instruction;
 
   type Instruction_Type is
    (CLS,

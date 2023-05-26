@@ -65,8 +65,7 @@ package body Tostiera is
       return;
     end if;
     Fetch_Instruction;
-    Decode_Instruction;
-    Execute_Instruction;
+    Decode_And_Execute_Instruction;
   end Clock_Cycle;
 
   procedure Fetch_Instruction is
@@ -78,10 +77,16 @@ package body Tostiera is
     PC := PC + 2;
   end Fetch_Instruction;
 
-  procedure Decode_Instruction is
-    Most_Significant_Nibble  : constant Halfword := Shift_Right (IR, 12);
-    Least_Significant_Nibble : constant Halfword := IR and 16#000F#;
-    Least_Significant_Byte   : constant Halfword := IR and 16#00FF#;
+  -- http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#3.1
+  procedure Decode_And_Execute_Instruction is
+    Most_Significant_Nibble  : constant Byte := Byte (Shift_Right (IR, 12));
+    Least_Significant_Nibble : constant Byte := Byte (IR and 16#000F#);
+    Least_Significant_Byte   : constant Byte := Byte (IR and 16#00FF#);
+
+    -- 16#0xy0#
+    X   : constant Natural := Natural (Shift_Right (IR, 8) and 16#000F#);
+    Y   : constant Natural := Natural (Shift_Right (IR, 4) and 16#000F#);
+    NNN : constant Halfword := IR and 16#0FFF#;
   begin
     declare
       Prev_PC : constant Halfword := PC - 2;
@@ -98,12 +103,18 @@ package body Tostiera is
       when 16#00E0# =>
         Instruction := CLS;
         Put_Line ("00E0 - CLS");
+
+        Display := [others => [others => False]];
         return;
+
       -- 00EE - RET
       when 16#00EE# =>
         Instruction := RET;
         Put_Line ("00EE - RET");
+
+        PC := Pop;
         return;
+
       when others =>
         null;
     end case;
@@ -113,69 +124,138 @@ package body Tostiera is
       when 1 =>
         Instruction := JP_addr;
         Put ("JP_add - 1nnn");
+
+        PC := NNN;
+
       -- 2nnn - CALL addr
       when 2 =>
         Instruction := CALL_addr;
         Put ("2nnn - CALL addr");
+
+        Push (PC);
+        PC := NNN;
+
       -- 3xkk - SE Vx, byte
       when 3 =>
         Instruction := SE_Vx_byte;
         Put ("3xkk - SE Vx, byte");
+
+        if Registers (X) = Least_Significant_Byte then
+          PC := PC + 2;
+        end if;
+
       -- 4xkk - SNE Vx, byte
       when 4 =>
         Instruction := SNE_Vx_byte;
         Put ("4xkk - SNE Vx, byte");
+
+        if Registers (X) /= Least_Significant_Byte then
+          PC := PC + 2;
+        end if;
+
       -- 5xy0 - SE Vx, Vy -- No other instruction starts with 5,
                           -- so we can skip checking for the 0.
       when 5 =>
         Instruction := SE_Vx_Vy;
         Put ("5xy0 - SE Vx, Vy");
+
+        if Registers (X) = Registers (Y) then
+          PC := PC + 2;
+        end if;
+
       -- 6xkk - LD Vx, byte
       when 6 =>
         Instruction := LD_Vx_byte;
         Put ("6xkk - LD Vx, byte");
+
+        Registers (X) := Least_Significant_Byte;
+
       -- 7xkk - ADD Vx, byte
       when 7 =>
         Instruction := ADD_Vx_byte;
         Put ("7xkk - ADD Vx, byte");
+
+        Registers (X) := Registers (X) + Least_Significant_Byte;
+
       when 8 =>
         case Least_Significant_Nibble is
           -- 8xy0 - LD Vx, Vy
           when 0 =>
             Instruction := LD_Vx_Vy;
             Put ("8xy0 - LD Vx, Vy");
+
+            Registers (X) := Registers (Y);
+
           -- 8xy1 - OR Vx, Vy
           when 1 =>
             Instruction := OR_Vx_Vy;
             Put ("8xy1 - OR Vx, Vy");
+
+            Registers (X) := Registers (X) or Registers (Y);
+
           -- 8xy2 - AND Vx, Vy
           when 2 =>
             Instruction := AND_Vx_Vy;
             Put ("8xy2 - AND Vx, Vy");
+
+            Registers (X) := Registers (X) and Registers (Y);
+
           -- 8xy3 - XOR Vx, Vy
           when 3 =>
             Instruction := XOR_Vx_Vy;
             Put ("8xy3 - XOR Vx, Vy");
+
+            Registers (X) := Registers (X) xor Registers (Y);
+
           -- 8xy4 - ADD Vx, Vy
           when 4 =>
             Instruction := ADD_Vx_Vy;
             Put ("8xy4 - ADD Vx, Vy");
+
+            declare
+              Sum : constant Byte := Registers (X) + Registers (Y);
+            begin
+              Registers (X) := Sum;
+              Registers (16#F#) := 0;
+            exception
+              -- Overflow
+              when Constraint_Error =>
+                Registers (16#F#) := 1;
+            end;
+
           -- 8xy5 - SUB Vx, Vy
           when 5 =>
             Instruction := SUB_Vx_Vy;
             Put ("8xy5 - SUB Vx, Vy");
+
+            Registers (16#F#) := (if Registers (X) > Registers (Y) then 1 else 0);
+            Registers (X) := Registers (X) - Registers (Y);
+
           -- 8xy6 - SHR Vx {, Vy}
           when 6 =>
             Instruction := SHR_Vx_Vy;
             Put ("8xy6 - SHR Vx {, Vy}");
+
+            Registers (16#F#) := (if (Registers (X) and 1) = 1 then 1 else 0);
+            Registers (X) := Shift_Right (Registers (X), 1);
+
           -- 8xy7 - SUBN Vx, Vy
           when 7 =>
             Instruction := SUBN_Vx_Vy;
             Put ("8xy7 - SUBN Vx, Vy");
+
+            Registers (16#F#) := (if Registers (Y) > Registers (X) then 1 else 0);
+            Registers (X) := Registers (Y) - Registers (X);
+
           -- 8xyE - SHL Vx {, Vy}
           when 16#E# =>
             Instruction := SHL_Vx_Vy;
             Put ("8xyE - SHL Vx {, Vy}");
+
+            Registers (16#F#) :=
+              (if (Registers (X) and 16#80#) = 16#80# then 1 else 0);
+            Registers (X) := Shift_Left (Registers (X), 1);
+
           when others =>
             null;
         end case;
@@ -184,198 +264,48 @@ package body Tostiera is
       when 9 =>
         Instruction := SNE_Vx_Vy;
         Put ("9xy0 - SNE Vx, Vy");
-      -- Annn - LD I, addr
-      when 16#A# =>
-        Instruction := LD_I_addr;
-        Put ("Annn - LD I, addr");
-      -- Bnnn - JP V0, addr
-      when 16#B# =>
-        Instruction := JP_V0_addr;
-        Put ("Bnnn - JP V0, addr");
-      -- Cxkk - RND Vx, byte
-      when 16#C# =>
-        Instruction := RND_Vx_byte;
-        Put ("Cxkk - RND Vx, byte");
-      -- Dxyn - DRW Vx, Vy, nibble
-      when 16#D# =>
-        Instruction := DRW_Vx_Vy_nibble;
-        Put ("Dxyn - DRW Vx, Vy, nibble");
-      when 16#E# =>
-        case Least_Significant_Nibble is
-          -- Ex9E - SKP Vx
-          when 16#9E# =>
-            Instruction := SKP_Vx;
-            Put ("Ex9E - SKP Vx");
-          -- ExA1 - SKNP Vx
-          when 16#A1# =>
-            Instruction := SKNP_Vx;
-            Put ("ExA1 - SKNP Vx");
-          when others =>
-            null;
-        end case;
-      when 16#F# =>
-        case Least_Significant_Byte is
-          -- Fx07 - LD Vx, DT
-          when 7 =>
-            Instruction := LD_Vx_DT;
-            Put ("Fx07 - LD Vx, DT");
-          -- Fx0A - LD Vx, K
-          when 16#0A# =>
-            Instruction := LD_Vx_K;
-            Put ("Fx0A - LD Vx, K");
-          -- Fx15 - LD DT, Vx
-          when 16#15# =>
-            Instruction := LD_DT_Vx;
-            Put ("Fx15 - LD DT, Vx");
-          -- Fx18 - LD ST, Vx
-          when 16#18# =>
-            Instruction := LD_ST_Vx;
-            Put ("Fx18 - LD ST, Vx");
-          -- Fx1E - ADD I, Vx
-          when 16#1E# =>
-            Instruction := ADD_I_Vx;
-            Put ("Fx1E - ADD I, Vx");
-          -- Fx29 - LD F, Vx
-          when 16#29# =>
-            Instruction := LD_F_Vx;
-            Put ("Fx29 - LD F, Vx");
-          -- Fx33 - LD B, Vx
-          when 16#33# =>
-            Instruction := LD_B_Vx;
-            Put ("Fx33 - LD B, Vx");
-          -- Fx55 - LD [I], Vx
-          when 16#55# =>
-            Instruction := LD_I_Vx;
-            Put ("Fx55 - LD [I], Vx");
-          -- Fx65 - LD Vx, [I]
-          when 16#65# =>
-            Instruction := LD_Vx_I;
-            Put ("Fx65 - LD Vx, [I]");
-          when others =>
-            null;
-        end case;
-      when others =>
-        Put ("ERROR: Invalid instruction");
-    end case;
-    New_Line;
-  end Decode_Instruction;
 
-  -- http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#3.1
-  procedure Execute_Instruction is
-    -- 16#0xy0#
-    X   : constant Natural := Natural (Shift_Right (IR, 8) and 16#000F#);
-    Y   : constant Natural := Natural (Shift_Right (IR, 4) and 16#000F#);
-    NNN : constant Halfword := IR and 16#0FFF#;
-    -- 16#00kk#
-    Least_Significant_Byte : constant Byte := Byte (IR and 16#00FF#);
-  begin
-    case Instruction is
-      when CLS =>
-        for Pixel of Display loop
-          Pixel := False;
-        end loop;
-
-      when RET =>
-        PC := Pop;
-
-      when JP_addr =>
-        PC := NNN;
-
-      when CALL_addr =>
-        Push (PC);
-        PC := NNN;
-
-      when SE_Vx_byte =>
-        if Registers (X) = Least_Significant_Byte then
-          PC := PC + 2;
-        end if;
-
-      when SNE_Vx_byte =>
-        if Registers (X) /= Least_Significant_Byte then
-          PC := PC + 2;
-        end if;
-
-      when SE_Vx_Vy =>
-        if Registers (X) = Registers (Y) then
-          PC := PC + 2;
-        end if;
-
-      when LD_Vx_byte =>
-        Registers (X) := Least_Significant_Byte;
-
-      when ADD_Vx_byte =>
-        Registers (X) := Registers (X) + Least_Significant_Byte;
-
-      when LD_Vx_Vy =>
-        Registers (X) := Registers (Y);
-
-      when OR_Vx_Vy =>
-        Registers (X) := Registers (X) or Registers (Y);
-
-      when AND_Vx_Vy =>
-        Registers (X) := Registers (X) and Registers (Y);
-
-      when XOR_Vx_Vy =>
-        Registers (X) := Registers (X) xor Registers (Y);
-
-      -- Registers (16#F#) := (if Registers (X) + Registers (Y) > 16#FF# then 1 else 0);
-      when ADD_Vx_Vy =>
-        declare
-          Overflow : constant Byte := Registers (X) + Registers (Y);
-        begin
-          Registers (16#F#) := 0;
-        exception
-          -- Overflow
-          when Constraint_Error =>
-            Registers (16#F#) := 1;
-        end;
-        Registers (X) := Registers (X) + Registers (Y);
-
-      when SUB_Vx_Vy =>
-        Registers (16#F#) := (if Registers (X) > Registers (Y) then 1 else 0);
-        Registers (X) := Registers (X) - Registers (Y);
-
-      when SHR_Vx_Vy =>
-        Registers (16#F#) := (if (Registers (X) and 1) = 1 then 1 else 0);
-        Registers (X) := Shift_Right (Registers (X), 1);
-
-      when SUBN_Vx_Vy =>
-        Registers (16#F#) := (if Registers (Y) > Registers (X) then 1 else 0);
-        Registers (X) := Registers (Y) - Registers (X);
-
-      when SHL_Vx_Vy =>
-        Registers (16#F#) :=
-          (if (Registers (X) and 16#80#) = 16#80# then 1 else 0);
-        Registers (X) := Shift_Left (Registers (X), 1);
-
-      when SNE_Vx_Vy =>
         if Registers (X) /= Registers (Y) then
           PC := PC + 2;
         end if;
 
-      when LD_I_addr =>
+      -- Annn - LD I, addr
+      when 16#A# =>
+        Instruction := LD_I_addr;
+        Put ("Annn - LD I, addr");
+
         I := NNN;
 
-      when JP_V0_addr =>
+      -- Bnnn - JP V0, addr
+      when 16#B# =>
+        Instruction := JP_V0_addr;
+        Put ("Bnnn - JP V0, addr");
+
         PC := NNN + Halfword (Registers (0));
 
-      when RND_Vx_byte =>
-        declare
-          subtype Random_Range is Byte range 0 .. 255;
+      -- Cxkk - RND Vx, byte
+      when 16#C# =>
+        Instruction := RND_Vx_byte;
+        Put ("Cxkk - RND Vx, byte");
 
+        declare
           package R is new
-            Ada.Numerics.Discrete_Random (Random_Range);
+            Ada.Numerics.Discrete_Random (Byte);
           use R;
 
           RNG  : Generator;
-          Rand : Random_Range;
+          Rand : Byte;
         begin
           Reset (RNG);
           Rand := Random (RNG);
-          Registers (X) := Byte (Rand) and Least_Significant_Byte;
+          Registers (X) := Rand and Least_Significant_Byte;
         end;
 
-      when DRW_Vx_Vy_nibble =>
+      -- Dxyn - DRW Vx, Vy, nibble
+      when 16#D# =>
+        Instruction := DRW_Vx_Vy_nibble;
+        Put ("Dxyn - DRW Vx, Vy, nibble");
+
         declare
           X_Coord : constant Natural := Natural (Registers (X));
           Y_Coord : constant Natural := Natural (Registers (Y));
@@ -406,66 +336,120 @@ package body Tostiera is
           end loop;
         end;
 
-      when SKP_Vx =>
-        if Keyboard (X) then
-          PC := PC + 2;
-        end if;
+      when 16#E# =>
+        case Least_Significant_Nibble is
+          -- Ex9E - SKP Vx
+          when 16#9E# =>
+            Instruction := SKP_Vx;
+            Put ("Ex9E - SKP Vx");
 
-      when SKNP_Vx =>
-        if not Keyboard (X) then
-          PC := PC + 2;
-        end if;
-
-      when LD_Vx_DT =>
-        Registers (X) := Delay_Timer;
-
-      when LD_Vx_K =>
-        declare
-          Pressed : Boolean := False;
-        begin
-          for Key in Keyboard'Range loop
-            if Keyboard (Key) then
-              Registers (X) := Byte (Key);
-              Pressed := True;
+            if Keyboard (X) then
+              PC := PC + 2;
             end if;
-          end loop;
-          if not Pressed then
-            PC := PC - 2;
-            return;
-          end if;
-        end;
 
-      when LD_DT_Vx =>
-        Delay_Timer := Registers (X);
+          -- ExA1 - SKNP Vx
+          when 16#A1# =>
+            Instruction := SKNP_Vx;
+            Put ("ExA1 - SKNP Vx");
 
-      when LD_ST_Vx =>
-        Sound_Timer := Registers (X);
+            if not Keyboard (X) then
+              PC := PC + 2;
+            end if;
 
-      when ADD_I_Vx =>
-        I := I + Halfword (Registers (X));
+          when others =>
+            null;
+        end case;
+      when 16#F# =>
+        case Least_Significant_Byte is
+          -- Fx07 - LD Vx, DT
+          when 7 =>
+            Instruction := LD_Vx_DT;
+            Put ("Fx07 - LD Vx, DT");
 
-      when LD_F_Vx =>
-        I := Halfword (Registers (X) * 5);
+            Registers (X) := Delay_Timer;
 
-      when LD_B_Vx =>
-        Memory (Natural (I))     := Registers (X) / 100;
-        Memory (Natural (I) + 1) := Registers (X) / 10 mod 10;
-        Memory (Natural (I) + 2) := Registers (X) mod 10;
+          -- Fx0A - LD Vx, K
+          when 16#0A# =>
+            Instruction := LD_Vx_K;
+            Put ("Fx0A - LD Vx, K");
 
-      when LD_I_Vx =>
-        for Index in 0 .. X loop
-          Memory (Natural (I) + Natural (Index)) := Registers (Natural (Index));
-        end loop;
+            declare
+              Pressed : Boolean := False;
+            begin
+              for Key in Keyboard'Range loop
+                if Keyboard (Key) then
+                  Registers (X) := Byte (Key);
+                  Pressed := True;
+                end if;
+              end loop;
+              if not Pressed then
+                PC := PC - 2;
+              end if;
+            end;
 
-      when LD_Vx_I =>
-        for Index in 0 .. X loop
-          Registers (Natural (Index)) := Memory (Natural (I) + Natural (Index));
-        end loop;
+          -- Fx15 - LD DT, Vx
+          when 16#15# =>
+            Instruction := LD_DT_Vx;
+            Put ("Fx15 - LD DT, Vx");
 
+            Delay_Timer := Registers (X);
+
+          -- Fx18 - LD ST, Vx
+          when 16#18# =>
+            Instruction := LD_ST_Vx;
+            Put ("Fx18 - LD ST, Vx");
+
+            Sound_Timer := Registers (X);
+
+          -- Fx1E - ADD I, Vx
+          when 16#1E# =>
+            Instruction := ADD_I_Vx;
+            Put ("Fx1E - ADD I, Vx");
+
+            I := I + Halfword (Registers (X));
+
+          -- Fx29 - LD F, Vx
+          when 16#29# =>
+            Instruction := LD_F_Vx;
+            Put ("Fx29 - LD F, Vx");
+
+            I := Halfword (Registers (X) * 5);
+
+          -- Fx33 - LD B, Vx
+          when 16#33# =>
+            Instruction := LD_B_Vx;
+            Put ("Fx33 - LD B, Vx");
+
+            Memory (Natural (I))     := Registers (X) / 100;
+            Memory (Natural (I) + 1) := Registers (X) / 10 mod 10;
+            Memory (Natural (I) + 2) := Registers (X) mod 10;
+
+          -- Fx55 - LD [I], Vx
+          when 16#55# =>
+            Instruction := LD_I_Vx;
+            Put ("Fx55 - LD [I], Vx");
+
+            for Index in 0 .. X loop
+              Memory (Natural (I) + Natural (Index)) := Registers (Natural (Index));
+            end loop;
+
+          -- Fx65 - LD Vx, [I]
+          when 16#65# =>
+            Instruction := LD_Vx_I;
+            Put ("Fx65 - LD Vx, [I]");
+
+            for Index in 0 .. X loop
+              Registers (Natural (Index)) := Memory (Natural (I) + Natural (Index));
+            end loop;
+
+          when others =>
+            null;
+        end case;
       when others =>
-        Put_Line ("ERROR: Invalid instruction!");
+        Put ("ERROR: Invalid instruction");
     end case;
-  end Execute_Instruction;
+    New_Line;
+  end Decode_And_Execute_Instruction;
 
   procedure Init is
   begin
