@@ -4,11 +4,9 @@ with Ada.Sequential_IO;
 with Ada.Integer_Text_IO;
 use  Ada.Integer_Text_IO;
 with Ada.Numerics.Discrete_Random;
-with Interfaces;
 
 package body Tostiera is
 
-  -- Stack subroutines.
   procedure Push (Adr : Address) is
   begin
     Stack.Prepend (Adr);
@@ -25,7 +23,6 @@ package body Tostiera is
   begin
     return Stack.First_Element;
   end Top;
-  -- end Stack subroutines.
 
   procedure Decrement_Timers is
   begin
@@ -75,36 +72,35 @@ package body Tostiera is
   procedure Fetch_Instruction is
   begin
     IR := 0;
-    IR := IR or Halfword(Memory (Natural(PC)));
+    IR := IR or Halfword (Memory (Natural (PC)));
     IR := Shift_Left (IR, 8);
-    IR := IR or Halfword(Memory (Natural(PC + 1)));
+    IR := IR or Halfword (Memory (Natural (PC + 1)));
     PC := PC + 2;
   end Fetch_Instruction;
 
   procedure Decode_Instruction is
-    use Interfaces;
     Most_Significant_Nibble  : constant Halfword := Shift_Right (IR, 12);
     Least_Significant_Nibble : constant Halfword := IR and 16#000F#;
     Least_Significant_Byte   : constant Halfword := IR and 16#00FF#;
   begin
     declare
-      Prev_PC : constant Halfword := PC - 2; 
+      Prev_PC : constant Halfword := PC - 2;
     begin
       Put ("[PC: " & Prev_PC'Image & "] ");
     end;
-    
+
     Put ("IR: ");
-    Put (Item => Natural(IR), Base => 16);
+    Put (Item => Natural (IR), Base => 16);
     Put (" ");
 
-    case IR is 
+    case IR is
       -- 00E0 - CLS
       when 16#00E0# =>
         Instruction := CLS;
         Put_Line ("00E0 - CLS");
         return;
       -- 00EE - RET
-      when 16#00EE# => 
+      when 16#00EE# =>
         Instruction := RET;
         Put_Line ("00EE - RET");
         return;
@@ -132,7 +128,7 @@ package body Tostiera is
       -- 5xy0 - SE Vx, Vy -- No other instruction starts with 5,
                           -- so we can skip checking for the 0.
       when 5 =>
-        Instruction := SE_Vx_Vy; 
+        Instruction := SE_Vx_Vy;
         Put ("5xy0 - SE Vx, Vy");
       -- 6xkk - LD Vx, byte
       when 6 =>
@@ -142,7 +138,7 @@ package body Tostiera is
       when 7 =>
         Instruction := ADD_Vx_byte;
         Put ("7xkk - ADD Vx, byte");
-      when 8 => 
+      when 8 =>
         case Least_Significant_Nibble is
           -- 8xy0 - LD Vx, Vy
           when 0 =>
@@ -259,19 +255,19 @@ package body Tostiera is
             null;
         end case;
       when others =>
-        Put ("ERROR: Invalid instruction");  
+        Put ("ERROR: Invalid instruction");
     end case;
     New_Line;
   end Decode_Instruction;
-  
+
   -- http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#3.1
   procedure Execute_Instruction is
     -- 16#0xy0#
-    X   : constant Natural := Natural(Shift_Right (IR, 8) and 16#000F#);
-    Y   : constant Natural := Natural(Shift_Right (IR, 4) and 16#000F#);
+    X   : constant Natural := Natural (Shift_Right (IR, 8) and 16#000F#);
+    Y   : constant Natural := Natural (Shift_Right (IR, 4) and 16#000F#);
     NNN : constant Halfword := IR and 16#0FFF#;
     -- 16#00kk#
-    Least_Significant_Byte : constant Byte := Byte(IR and 16#00FF#);
+    Least_Significant_Byte : constant Byte := Byte (IR and 16#00FF#);
   begin
     case Instruction is
       when CLS =>
@@ -284,7 +280,7 @@ package body Tostiera is
 
       when JP_addr =>
         PC := NNN;
-        
+
       when CALL_addr =>
         Push (PC);
         PC := NNN;
@@ -294,17 +290,17 @@ package body Tostiera is
           PC := PC + 2;
         end if;
 
-      when SNE_Vx_byte => 
+      when SNE_Vx_byte =>
         if Registers (X) /= Least_Significant_Byte then
           PC := PC + 2;
         end if;
-      
+
       when SE_Vx_Vy =>
         if Registers (X) = Registers (Y) then
           PC := PC + 2;
         end if;
 
-      when LD_Vx_byte => 
+      when LD_Vx_byte =>
         Registers (X) := Least_Significant_Byte;
 
       when ADD_Vx_byte =>
@@ -313,7 +309,7 @@ package body Tostiera is
       when LD_Vx_Vy =>
         Registers (X) := Registers (Y);
 
-      when OR_Vx_Vy => 
+      when OR_Vx_Vy =>
         Registers (X) := Registers (X) or Registers (Y);
 
       when AND_Vx_Vy =>
@@ -322,8 +318,17 @@ package body Tostiera is
       when XOR_Vx_Vy =>
         Registers (X) := Registers (X) xor Registers (Y);
 
+      -- Registers (16#F#) := (if Registers (X) + Registers (Y) > 16#FF# then 1 else 0);
       when ADD_Vx_Vy =>
-        Registers (16#F#) := (if Registers (X) + Registers (Y) > 16#FF# then 1 else 0);
+        declare
+          Overflow : constant Byte := Registers (X) + Registers (Y);
+        begin
+          Registers (16#F#) := 0;
+        exception
+          -- Overflow
+          when Constraint_Error =>
+            Registers (16#F#) := 1;
+        end;
         Registers (X) := Registers (X) + Registers (Y);
 
       when SUB_Vx_Vy =>
@@ -339,7 +344,8 @@ package body Tostiera is
         Registers (X) := Registers (Y) - Registers (X);
 
       when SHL_Vx_Vy =>
-        Registers (16#F#) := (if (Registers (X) and 16#80#) = 16#80# then 1 else 0);
+        Registers (16#F#) :=
+          (if (Registers (X) and 16#80#) = 16#80# then 1 else 0);
         Registers (X) := Shift_Left (Registers (X), 1);
 
       when SNE_Vx_Vy =>
@@ -347,22 +353,22 @@ package body Tostiera is
           PC := PC + 2;
         end if;
 
-      when LD_I_addr => 
+      when LD_I_addr =>
         I := NNN;
 
       when JP_V0_addr =>
-        PC := NNN + Halfword(Registers (0));
+        PC := NNN + Halfword (Registers (0));
 
-      when RND_Vx_byte => 
+      when RND_Vx_byte =>
         declare
           subtype Random_Range is Byte range 0 .. 255;
 
-          package R is new 
+          package R is new
             Ada.Numerics.Discrete_Random (Random_Range);
           use R;
 
           RNG  : Generator;
-          Rand : Random_Range; 
+          Rand : Random_Range;
         begin
           Reset (RNG);
           Rand := Random (RNG);
@@ -371,33 +377,36 @@ package body Tostiera is
 
       when DRW_Vx_Vy_nibble =>
         declare
-          X_Coord : constant Natural := Natural(Registers (X));
-          Y_Coord : constant Natural := Natural(Registers (Y));
-          N : constant Natural := Natural(Least_Significant_Byte and 16#0F#);
+          X_Coord : constant Natural := Natural (Registers (X));
+          Y_Coord : constant Natural := Natural (Registers (Y));
+          N : constant Natural := Natural (Least_Significant_Byte and 16#0F#);
           Sprite_Byte : Byte := 0;
           Bit : Byte := 0;
         begin
           Registers (16#F#) := 0;
           for Row in 0 .. N - 1 loop
-            Sprite_Byte := Memory (Natural(I) + Row);
+            Sprite_Byte := Memory (Natural (I) + Row);
             for Bit_Position in 0 .. 7 loop
               Bit := Shift_Right (Sprite_Byte, 7 - Bit_Position) and 1;
-              declare 
-                X_Offset : constant Natural := (X_Coord + Bit_Position) mod Display_Width;
-                Y_Offset : constant Natural := (Y_Coord + Row) mod Display_Height;
+              declare
+                X_Offset : constant Natural :=
+                  (X_Coord + Bit_Position) mod Display_Width;
+                Y_Offset : constant Natural :=
+                  (Y_Coord + Row) mod Display_Height;
               begin
                 if Bit = 1 then
                   if Display (X_Offset, Y_Offset) then
                     Registers (16#F#) := 1;
                   end if;
-                  Display (X_Offset, Y_Offset) := Display (X_Offset, Y_Offset) xor True;
+                  Display (X_Offset, Y_Offset) :=
+                    Display (X_Offset, Y_Offset) xor True;
                 end if;
               end;
             end loop;
           end loop;
         end;
 
-      when SKP_Vx => 
+      when SKP_Vx =>
         if Keyboard (X) then
           PC := PC + 2;
         end if;
@@ -406,7 +415,7 @@ package body Tostiera is
         if not Keyboard (X) then
           PC := PC + 2;
         end if;
-      
+
       when LD_Vx_DT =>
         Registers (X) := Delay_Timer;
 
@@ -418,7 +427,7 @@ package body Tostiera is
             if Keyboard (Key) then
               Registers (X) := Byte (Key);
               Pressed := True;
-            end if; 
+            end if;
           end loop;
           if not Pressed then
             PC := PC - 2;
@@ -433,12 +442,11 @@ package body Tostiera is
         Sound_Timer := Registers (X);
 
       when ADD_I_Vx =>
-        I := I + Halfword(Registers (X));
+        I := I + Halfword (Registers (X));
 
       when LD_F_Vx =>
         I := Halfword (Registers (X) * 5);
-      
-      -- FIXME: For some reason this doens't pass test_opcode.ch8
+
       when LD_B_Vx =>
         Memory (Natural (I))     := Registers (X) / 100;
         Memory (Natural (I) + 1) := Registers (X) / 10 mod 10;
@@ -446,12 +454,12 @@ package body Tostiera is
 
       when LD_I_Vx =>
         for Index in 0 .. X loop
-          Memory (Natural(I) + Natural(Index)) := Registers (Natural(Index)); 
+          Memory (Natural (I) + Natural (Index)) := Registers (Natural (Index));
         end loop;
 
       when LD_Vx_I =>
         for Index in 0 .. X loop
-          Registers (Natural(Index)) := Memory (Natural(I) + Natural(Index));
+          Registers (Natural (Index)) := Memory (Natural (I) + Natural (Index));
         end loop;
 
       when others =>
@@ -472,27 +480,27 @@ package body Tostiera is
     Put_Line ("Dumping...");
     Put_Line ("[Registers]");
     Put ("IR: ");
-    Put (Item => Natural(IR), Base => 16);
+    Put (Item => Natural (IR), Base => 16);
     New_Line;
     Put ("PC: ");
-    Put (Item => Natural(PC), Base => 16);
+    Put (Item => Natural (PC), Base => 16);
     New_Line;
     Put ("I: ");
-    Put (Item => Natural(I), Base => 16);
+    Put (Item => Natural (I), Base => 16);
     New_Line;
 
     Put_Line ("[Timers]");
     Put ("DT: ");
-    Put (Item => Natural(Delay_Timer), Base => 16);
+    Put (Item => Natural (Delay_Timer), Base => 16);
     New_Line;
     Put ("ST: ");
-    Put (Item => Natural(Sound_Timer), Base => 16);
+    Put (Item => Natural (Sound_Timer), Base => 16);
     New_Line;
 
     Put_Line ("[Data Registers]");
     for Index in Registers'Range loop
       Put ("V" & Index'Image & ": ");
-      Put (Item => Natural(Registers (Index)), Base => 16);
+      Put (Item => Natural (Registers (Index)), Base => 16);
       --  Put (", ");
       --  if Index mod 3 = 0 then
       --    New_Line;

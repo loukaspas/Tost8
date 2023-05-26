@@ -97,9 +97,9 @@ procedure Tost8 is
           when SDL.Events.Keyboards.Code_V =>
             Keyboard (16#F#) := True;
 
-          -- TODO: 
+          -- TODO:
           -- - Faster/slower emulation
-          -- - Step    
+          -- - Step
           when SDL.Events.Keyboards.Code_P =>
             Put_Line ("Emulator " & (if Running then "Paused." else "Resumed."));
             Running := not Running;

@@ -8,7 +8,8 @@ package Tostiera is
   Display_Width  : constant := 64;
   Display_Height : constant := 32;
 
-  Period : constant :=  0.01; -- 0.166; -- 16.6 milliseconds for 60Hz update time.
+  -- 0.166 for 16.6 milliseconds for 60Hz.
+  Period : constant :=  0.01;
 
   type Byte is new Unsigned_8;
   type Halfword is new Unsigned_16;
@@ -17,7 +18,6 @@ package Tostiera is
   type Registers_Type is array (0 .. 15) of Byte;
   type Keyboard_Type is array (0 .. 15) of Boolean;
 
-  -- type alias.
   subtype Address is Halfword;
 
   package Stacks is new
@@ -31,7 +31,7 @@ package Tostiera is
   IR : Halfword := 0;
 
   Stack : Stacks.Vector;
-  
+
   Delay_Timer : Byte;
   Sound_Timer : Byte;
 
