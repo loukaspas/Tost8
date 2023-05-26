@@ -37,8 +37,8 @@ procedure Tost8 is
     for J in Display'Range (2) loop
       for I in Display'Range (1) loop
         Renderer.Set_Draw_Colour (if Display (I, J) then White else Black);
-          X := SDL.C.int(I * Pixel_Size);
-          Y := SDL.C.int(J * Pixel_Size);
+          X := SDL.C.int (I * Pixel_Size);
+          Y := SDL.C.int (J * Pixel_Size);
           Renderer.Fill (Rectangle => (X, Y, Pixel_Size, Pixel_Size));
           -- Black outline for each pixel.
           Renderer.Set_Draw_Colour (Black);
@@ -154,7 +154,6 @@ procedure Tost8 is
     end loop;
   end Handle_Event;
 
-  Test_File_Path : String := "/home/loukas/src/roms/chip8-test-rom/test_opcode.ch8";
 begin
   if Argument_Count /= 1 then
     Put_Line ("USAGE");
@@ -190,7 +189,6 @@ begin
   SDL.Video.Renderers.Makers.Create (Renderer, W);
 
   Init;
-  --  Load_Program (Test_File_Path);
   Load_Program (Argument (1));
 
   while not Tostiera.Quit loop
